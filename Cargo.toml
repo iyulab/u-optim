@@ -1,0 +1,15 @@
+[package]
+name = "u-optim"
+version = "0.1.0"
+edition = "2021"
+authors = ["iyulab"]
+license = "MIT"
+description = "Mathematical primitives for the U-Engine ecosystem: statistics, probability, random sampling, and collections."
+repository = "https://github.com/iyulab/u-optim"
+keywords = ["statistics", "probability", "optimization", "mathematics"]
+categories = ["mathematics", "science"]
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1.4"
