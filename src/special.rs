@@ -265,7 +265,7 @@ mod proptests {
         #[test]
         fn cdf_in_zero_one(x in -6.0_f64..6.0) {
             let c = standard_normal_cdf(x);
-            prop_assert!(c >= 0.0 && c <= 1.0, "CDF({x}) = {c} out of [0,1]");
+            prop_assert!((0.0..=1.0).contains(&c), "CDF({x}) = {c} out of [0,1]");
         }
 
         #[test]

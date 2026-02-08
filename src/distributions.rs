@@ -987,7 +987,7 @@ mod proptests {
         ) {
             let u = Uniform::new(min, max).unwrap();
             let c = u.cdf(x);
-            prop_assert!(c >= 0.0 && c <= 1.0);
+            prop_assert!((0.0..=1.0).contains(&c));
         }
 
         #[test]
@@ -1015,7 +1015,7 @@ mod proptests {
             let mode = min + mode_frac * range;
             let t = Triangular::new(min, mode, max).unwrap();
             let c = t.cdf(x);
-            prop_assert!(c >= 0.0 && c <= 1.0);
+            prop_assert!((0.0..=1.0).contains(&c));
         }
 
         #[test]
