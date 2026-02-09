@@ -1,4 +1,4 @@
-# u-optim
+# u-numerics
 
 **Domain-agnostic mathematical primitives in Rust**
 
@@ -7,7 +7,7 @@
 
 ## Overview
 
-u-optim provides foundational mathematical, statistical, and probabilistic building blocks. Entirely domain-agnostic with no external dependencies beyond `rand`.
+u-numerics provides foundational mathematical, statistical, and probabilistic building blocks. Entirely domain-agnostic with no external dependencies beyond `rand`.
 
 ## Modules
 
@@ -29,7 +29,7 @@ u-optim provides foundational mathematical, statistical, and probabilistic build
 
 ```toml
 [dependencies]
-u-optim = { git = "https://github.com/iyulab/u-optim" }
+u-numerics = { git = "https://github.com/iyulab/u-numerics" }
 ```
 
 ```rust

@@ -1,4 +1,4 @@
-//! # u-optim
+//! # u-numerics
 //!
 //! Mathematical primitives for the U-Engine ecosystem.
 //!
