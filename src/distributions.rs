@@ -13,6 +13,10 @@
 //! | [`LogNormal`] | μ, σ | exp(μ+σ²/2) | (exp(σ²)−1)·exp(2μ+σ²) |
 //! | [`Pert`] | min, mode, max | (a+4m+b)/6 | see docs |
 //! | [`Weibull`] | shape (β), scale (η) | η·Γ(1+1/β) | η²·[Γ(1+2/β)−Γ(1+1/β)²] |
+//! | [`Exponential`] | rate (λ) | 1/λ | 1/λ² |
+//! | [`GammaDistribution`] | shape (α), rate (β) | α/β | α/β² |
+//! | [`BetaDistribution`] | α, β | α/(α+β) | αβ/((α+β)²(α+β+1)) |
+//! | [`ChiSquared`] | k (degrees of freedom) | k | 2k |
 //!
 //! # Design Notes
 //!
@@ -1135,6 +1139,242 @@ fn beta_cf(x: f64, a: f64, b: f64) -> f64 {
 }
 
 // ============================================================================
+// Beta Distribution
+// ============================================================================
+
+/// Beta distribution on `[0, 1]`.
+///
+/// # Mathematical Definition
+/// - PDF: f(x) = x^(α−1) (1−x)^(β−1) / B(α, β)
+/// - CDF: F(x) = I_x(α, β) (regularized incomplete beta)
+/// - Mean: α / (α + β)
+/// - Variance: αβ / ((α+β)²(α+β+1))
+///
+/// # Examples
+///
+/// ```
+/// use u_optim::distributions::BetaDistribution;
+///
+/// let beta = BetaDistribution::new(2.0, 5.0).unwrap();
+/// assert!((beta.mean() - 2.0 / 7.0).abs() < 1e-10);
+/// assert!(beta.pdf(0.3) > 0.0);
+/// assert!((beta.cdf(0.0)).abs() < 1e-10);
+/// assert!((beta.cdf(1.0) - 1.0).abs() < 1e-10);
+/// ```
+///
+/// # References
+///
+/// Johnson, N. L., Kotz, S., & Balakrishnan, N. (1995).
+/// *Continuous Univariate Distributions*, Vol. 2, Chapter 25.
+#[derive(Debug, Clone)]
+pub struct BetaDistribution {
+    /// Shape parameter α > 0.
+    pub alpha: f64,
+    /// Shape parameter β > 0.
+    pub beta: f64,
+}
+
+impl BetaDistribution {
+    /// Creates a new Beta distribution with shape parameters α and β.
+    ///
+    /// # Errors
+    /// Returns `DistributionError` if α ≤ 0 or β ≤ 0.
+    pub fn new(alpha: f64, beta: f64) -> Result<Self, DistributionError> {
+        if alpha <= 0.0 || !alpha.is_finite() {
+            return Err(DistributionError::InvalidParameters(
+                format!("alpha must be positive and finite, got {alpha}"),
+            ));
+        }
+        if beta <= 0.0 || !beta.is_finite() {
+            return Err(DistributionError::InvalidParameters(
+                format!("beta must be positive and finite, got {beta}"),
+            ));
+        }
+        Ok(Self { alpha, beta })
+    }
+
+    /// Returns the mean: α / (α + β).
+    pub fn mean(&self) -> f64 {
+        self.alpha / (self.alpha + self.beta)
+    }
+
+    /// Returns the variance: αβ / ((α+β)²(α+β+1)).
+    pub fn variance(&self) -> f64 {
+        let ab = self.alpha + self.beta;
+        self.alpha * self.beta / (ab * ab * (ab + 1.0))
+    }
+
+    /// Returns the mode.
+    ///
+    /// Defined when α > 1 and β > 1: mode = (α−1)/(α+β−2).
+    /// Returns `None` for other parameter combinations (bimodal or boundary modes).
+    pub fn mode(&self) -> Option<f64> {
+        if self.alpha > 1.0 && self.beta > 1.0 {
+            Some((self.alpha - 1.0) / (self.alpha + self.beta - 2.0))
+        } else {
+            None
+        }
+    }
+
+    /// Evaluates the PDF at x.
+    pub fn pdf(&self, x: f64) -> f64 {
+        if x <= 0.0 || x >= 1.0 {
+            return 0.0;
+        }
+        let ln_pdf = (self.alpha - 1.0) * x.ln()
+            + (self.beta - 1.0) * (1.0 - x).ln()
+            - ln_beta(self.alpha, self.beta);
+        ln_pdf.exp()
+    }
+
+    /// Evaluates the CDF at x: F(x) = I_x(α, β).
+    pub fn cdf(&self, x: f64) -> f64 {
+        if x <= 0.0 {
+            return 0.0;
+        }
+        if x >= 1.0 {
+            return 1.0;
+        }
+        regularized_incomplete_beta(x, self.alpha, self.beta)
+    }
+
+    /// Evaluates the quantile (inverse CDF) at probability p ∈ [0, 1].
+    ///
+    /// Uses Newton-Raphson iteration with an initial approximation
+    /// from the normal approximation to the beta distribution.
+    pub fn quantile(&self, p: f64) -> Option<f64> {
+        if !(0.0..=1.0).contains(&p) {
+            return None;
+        }
+        if p == 0.0 {
+            return Some(0.0);
+        }
+        if (p - 1.0).abs() < 1e-15 {
+            return Some(1.0);
+        }
+
+        // Bisection method for robust convergence on [0, 1]
+        let mut lo = 0.0_f64;
+        let mut hi = 1.0_f64;
+
+        for _ in 0..100 {
+            let mid = (lo + hi) / 2.0;
+            if hi - lo < 1e-14 {
+                break;
+            }
+            if self.cdf(mid) < p {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+
+        Some((lo + hi) / 2.0)
+    }
+}
+
+// ============================================================================
+// Chi-Squared Distribution
+// ============================================================================
+
+/// Chi-squared distribution with k degrees of freedom.
+///
+/// The chi-squared distribution is a special case of the Gamma distribution
+/// with shape = k/2 and rate = 1/2.
+///
+/// # Mathematical Definition
+/// - PDF: f(x) = x^(k/2−1) exp(−x/2) / (2^(k/2) Γ(k/2))
+/// - CDF: F(x) = P(k/2, x/2) (regularized lower incomplete gamma)
+/// - Mean: k
+/// - Variance: 2k
+///
+/// # Examples
+///
+/// ```
+/// use u_optim::distributions::ChiSquared;
+///
+/// let chi2 = ChiSquared::new(3.0).unwrap();
+/// assert!((chi2.mean() - 3.0).abs() < 1e-10);
+/// assert!((chi2.variance() - 6.0).abs() < 1e-10);
+/// assert!((chi2.cdf(0.0)).abs() < 1e-10);
+/// ```
+///
+/// # References
+///
+/// Johnson, N. L., Kotz, S., & Balakrishnan, N. (1994).
+/// *Continuous Univariate Distributions*, Vol. 1, Chapter 18.
+#[derive(Debug, Clone)]
+pub struct ChiSquared {
+    /// Degrees of freedom k > 0.
+    pub k: f64,
+}
+
+impl ChiSquared {
+    /// Creates a new Chi-squared distribution with k degrees of freedom.
+    ///
+    /// # Errors
+    /// Returns `DistributionError` if k ≤ 0.
+    pub fn new(k: f64) -> Result<Self, DistributionError> {
+        if k <= 0.0 || !k.is_finite() {
+            return Err(DistributionError::InvalidParameters(
+                format!("k must be positive and finite, got {k}"),
+            ));
+        }
+        Ok(Self { k })
+    }
+
+    /// Returns the mean: k.
+    pub fn mean(&self) -> f64 {
+        self.k
+    }
+
+    /// Returns the variance: 2k.
+    pub fn variance(&self) -> f64 {
+        2.0 * self.k
+    }
+
+    /// Evaluates the PDF at x.
+    pub fn pdf(&self, x: f64) -> f64 {
+        if x <= 0.0 {
+            return 0.0;
+        }
+        let half_k = self.k / 2.0;
+        let ln_pdf = (half_k - 1.0) * x.ln() - x / 2.0 - half_k * 2.0_f64.ln() - ln_gamma(half_k);
+        ln_pdf.exp()
+    }
+
+    /// Evaluates the CDF at x: F(x) = P(k/2, x/2).
+    pub fn cdf(&self, x: f64) -> f64 {
+        if x <= 0.0 {
+            return 0.0;
+        }
+        regularized_lower_gamma(self.k / 2.0, x / 2.0)
+    }
+
+    /// Evaluates the quantile (inverse CDF) at probability p ∈ [0, 1].
+    ///
+    /// Delegates to Gamma(k/2, 1/2) quantile since Chi2(k) = Gamma(k/2, 1/2).
+    pub fn quantile(&self, p: f64) -> Option<f64> {
+        if !(0.0..=1.0).contains(&p) {
+            return None;
+        }
+        if p == 0.0 {
+            return Some(0.0);
+        }
+        if (p - 1.0).abs() < 1e-15 {
+            return Some(f64::INFINITY);
+        }
+
+        // Chi2(k) = Gamma(k/2, rate=1/2)
+        let gamma = GammaDistribution {
+            shape: self.k / 2.0,
+            rate: 0.5,
+        };
+        gamma.quantile(p)
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -1666,6 +1906,179 @@ mod tests {
         assert!(GammaDistribution::new(f64::NAN, 1.0).is_err());
     }
 
+    // --- Beta Distribution ---
+
+    #[test]
+    fn test_beta_mean_variance() {
+        let b = BetaDistribution::new(2.0, 5.0).unwrap();
+        // Mean = 2/7
+        assert!((b.mean() - 2.0 / 7.0).abs() < 1e-10);
+        // Variance = 2*5 / (49 * 8) = 10/392
+        let expected_var = 2.0 * 5.0 / (7.0 * 7.0 * 8.0);
+        assert!((b.variance() - expected_var).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_beta_symmetric() {
+        // Beta(3, 3) is symmetric around 0.5
+        let b = BetaDistribution::new(3.0, 3.0).unwrap();
+        assert!((b.mean() - 0.5).abs() < 1e-10);
+        assert!((b.mode().unwrap() - 0.5).abs() < 1e-10);
+        // PDF symmetric: f(0.3) = f(0.7)
+        assert!((b.pdf(0.3) - b.pdf(0.7)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_beta_uniform_special_case() {
+        // Beta(1, 1) = Uniform(0, 1)
+        let b = BetaDistribution::new(1.0, 1.0).unwrap();
+        assert!((b.mean() - 0.5).abs() < 1e-10);
+        assert!((b.cdf(0.5) - 0.5).abs() < 1e-10);
+        assert!((b.cdf(0.25) - 0.25).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_beta_cdf_boundaries() {
+        let b = BetaDistribution::new(2.0, 3.0).unwrap();
+        assert_eq!(b.cdf(0.0), 0.0);
+        assert_eq!(b.cdf(-1.0), 0.0);
+        assert_eq!(b.cdf(1.0), 1.0);
+        assert_eq!(b.cdf(2.0), 1.0);
+    }
+
+    #[test]
+    fn test_beta_pdf_integral() {
+        let b = BetaDistribution::new(2.0, 5.0).unwrap();
+        let n = 10_000;
+        let dt = 1.0 / n as f64;
+        let integral: f64 = (0..n)
+            .map(|i| {
+                let x = (i as f64 + 0.5) * dt;
+                b.pdf(x) * dt
+            })
+            .sum();
+        assert!((integral - 1.0).abs() < 0.01, "PDF integral = {integral}");
+    }
+
+    #[test]
+    fn test_beta_quantile_roundtrip() {
+        let b = BetaDistribution::new(2.0, 5.0).unwrap();
+        for &p in &[0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99] {
+            let x = b.quantile(p).unwrap();
+            let p_back = b.cdf(x);
+            assert!((p_back - p).abs() < 1e-6, "p={p}, x={x}, p_back={p_back}");
+        }
+    }
+
+    #[test]
+    fn test_beta_mode() {
+        let b = BetaDistribution::new(5.0, 3.0).unwrap();
+        // mode = (5-1)/(5+3-2) = 4/6 = 2/3
+        assert!((b.mode().unwrap() - 2.0 / 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_beta_mode_undefined() {
+        // Beta(0.5, 0.5) — U-shaped, no interior mode
+        let b = BetaDistribution::new(0.5, 0.5).unwrap();
+        assert!(b.mode().is_none());
+    }
+
+    #[test]
+    fn test_beta_invalid() {
+        assert!(BetaDistribution::new(0.0, 1.0).is_err());
+        assert!(BetaDistribution::new(-1.0, 1.0).is_err());
+        assert!(BetaDistribution::new(1.0, 0.0).is_err());
+        assert!(BetaDistribution::new(f64::NAN, 1.0).is_err());
+    }
+
+    // --- Chi-Squared Distribution ---
+
+    #[test]
+    fn test_chi2_mean_variance() {
+        let chi2 = ChiSquared::new(5.0).unwrap();
+        assert!((chi2.mean() - 5.0).abs() < 1e-10);
+        assert!((chi2.variance() - 10.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_chi2_exp_special_case() {
+        // Chi2(2) = Exp(1/2): CDF(x) = 1 - exp(-x/2)
+        let chi2 = ChiSquared::new(2.0).unwrap();
+        let x = 4.0;
+        let expected = 1.0 - (-x / 2.0_f64).exp();
+        assert!(
+            (chi2.cdf(x) - expected).abs() < 1e-8,
+            "CDF({x}) = {} vs {expected}",
+            chi2.cdf(x)
+        );
+    }
+
+    #[test]
+    fn test_chi2_cdf_boundaries() {
+        let chi2 = ChiSquared::new(3.0).unwrap();
+        assert_eq!(chi2.cdf(0.0), 0.0);
+        assert_eq!(chi2.cdf(-1.0), 0.0);
+        // CDF should approach 1 for large x
+        assert!(chi2.cdf(100.0) > 0.999);
+    }
+
+    #[test]
+    fn test_chi2_pdf_integral() {
+        let chi2 = ChiSquared::new(4.0).unwrap();
+        let n = 20_000;
+        let dt = 30.0 / n as f64;
+        let integral: f64 = (0..n)
+            .map(|i| {
+                let x = (i as f64 + 0.5) * dt;
+                chi2.pdf(x) * dt
+            })
+            .sum();
+        assert!((integral - 1.0).abs() < 0.01, "PDF integral = {integral}");
+    }
+
+    #[test]
+    fn test_chi2_quantile_roundtrip() {
+        let chi2 = ChiSquared::new(5.0).unwrap();
+        for &p in &[0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99] {
+            let x = chi2.quantile(p).unwrap();
+            let p_back = chi2.cdf(x);
+            assert!((p_back - p).abs() < 1e-6, "p={p}, x={x}, p_back={p_back}");
+        }
+    }
+
+    #[test]
+    fn test_chi2_known_quantiles() {
+        // Common chi-squared critical values (k=5)
+        // p=0.05 → 1.1455, p=0.95 → 11.0705 (from tables)
+        let chi2 = ChiSquared::new(5.0).unwrap();
+        let q05 = chi2.quantile(0.05).unwrap();
+        assert!((q05 - 1.1455).abs() < 0.01, "q(0.05) = {q05}");
+        let q95 = chi2.quantile(0.95).unwrap();
+        assert!((q95 - 11.0705).abs() < 0.01, "q(0.95) = {q95}");
+    }
+
+    #[test]
+    fn test_chi2_invalid() {
+        assert!(ChiSquared::new(0.0).is_err());
+        assert!(ChiSquared::new(-1.0).is_err());
+        assert!(ChiSquared::new(f64::NAN).is_err());
+    }
+
+    #[test]
+    fn test_chi2_gamma_consistency() {
+        // Chi2(k) = Gamma(k/2, 1/2)
+        let k = 6.0;
+        let chi2 = ChiSquared::new(k).unwrap();
+        let gamma = GammaDistribution::new(k / 2.0, 0.5).unwrap();
+
+        let x = 5.0;
+        assert!(
+            (chi2.cdf(x) - gamma.cdf(x)).abs() < 1e-10,
+            "Chi2 and Gamma CDF should match"
+        );
+    }
+
     #[test]
     fn test_weibull_mean_variance_known() {
         // β=3.6, η=1000: known engineering example
@@ -1914,6 +2327,51 @@ mod proptests {
         ) {
             let g = GammaDistribution::new(shape, rate).unwrap();
             prop_assert!(g.variance() > 0.0, "variance must be positive");
+        }
+
+        // --- Beta ---
+
+        #[test]
+        fn beta_cdf_in_01(
+            alpha in 0.5_f64..10.0,
+            beta_param in 0.5_f64..10.0,
+            x in 0.001_f64..0.999,
+        ) {
+            let b = BetaDistribution::new(alpha, beta_param).unwrap();
+            let c = b.cdf(x);
+            prop_assert!((0.0..=1.0).contains(&c), "CDF({x}) = {c}");
+        }
+
+        #[test]
+        fn beta_quantile_roundtrip(
+            alpha in 1.0_f64..10.0,
+            beta_param in 1.0_f64..10.0,
+            p in 0.01_f64..0.99,
+        ) {
+            let b = BetaDistribution::new(alpha, beta_param).unwrap();
+            let x = b.quantile(p).unwrap();
+            let p_back = b.cdf(x);
+            prop_assert!((p_back - p).abs() < 1e-5, "p={p}, p_back={p_back}");
+        }
+
+        // --- Chi-Squared ---
+
+        #[test]
+        fn chi2_cdf_in_01(
+            k in 1.0_f64..20.0,
+            x in 0.001_f64..50.0,
+        ) {
+            let chi2 = ChiSquared::new(k).unwrap();
+            let c = chi2.cdf(x);
+            prop_assert!((0.0..=1.0).contains(&c), "CDF({x}) = {c}");
+        }
+
+        #[test]
+        fn chi2_variance_positive(
+            k in 0.5_f64..50.0,
+        ) {
+            let chi2 = ChiSquared::new(k).unwrap();
+            prop_assert!(chi2.variance() > 0.0, "variance must be positive");
         }
     }
 }
