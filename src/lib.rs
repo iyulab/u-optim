@@ -9,7 +9,7 @@
 //! ## Modules
 //!
 //! - [`stats`] — Descriptive statistics with numerical stability guarantees
-//! - [`distributions`] — Probability distributions (Uniform, Triangular, PERT, Normal, LogNormal)
+//! - [`distributions`] — Probability distributions (Uniform, Triangular, PERT, Normal, LogNormal, Weibull)
 //! - [`special`] — Special mathematical functions (normal CDF, inverse normal CDF)
 //! - [`random`] — Random number generation, shuffling, and weighted sampling
 //! - [`collections`] — Specialized data structures (Union-Find)

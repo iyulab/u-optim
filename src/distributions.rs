@@ -12,6 +12,7 @@
 //! | [`Normal`] | μ, σ | μ | σ² |
 //! | [`LogNormal`] | μ, σ | exp(μ+σ²/2) | (exp(σ²)−1)·exp(2μ+σ²) |
 //! | [`Pert`] | min, mode, max | (a+4m+b)/6 | see docs |
+//! | [`Weibull`] | shape (β), scale (η) | η·Γ(1+1/β) | η²·[Γ(1+2/β)−Γ(1+1/β)²] |
 //!
 //! # Design Notes
 //!
@@ -574,6 +575,144 @@ impl Pert {
 }
 
 // ============================================================================
+// Weibull Distribution
+// ============================================================================
+
+/// Weibull distribution with shape parameter β (> 0) and scale parameter η (> 0).
+///
+/// Widely used in reliability engineering and survival analysis.
+///
+/// # Mathematical Definition
+/// - PDF: f(t) = (β/η)·(t/η)^(β−1)·exp(−(t/η)^β) for t ≥ 0
+/// - CDF: F(t) = 1 − exp(−(t/η)^β)
+/// - Quantile: t = η·(−ln(1−p))^(1/β)
+/// - Mean: η·Γ(1 + 1/β)
+/// - Variance: η²·[Γ(1 + 2/β) − Γ(1 + 1/β)²]
+///
+/// # Special Cases
+/// - β = 1: Exponential distribution with rate 1/η
+/// - β = 2: Rayleigh distribution
+/// - β ≈ 3.6: Approximates a normal distribution
+///
+/// Reference: Weibull (1951), "A Statistical Distribution Function of Wide
+/// Applicability", *Journal of Applied Mechanics* 18(3), pp. 293–297.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Weibull {
+    shape: f64, // β
+    scale: f64, // η
+}
+
+impl Weibull {
+    /// Creates a new Weibull distribution with the given shape (β) and scale (η).
+    ///
+    /// # Errors
+    /// Returns `Err` if `shape ≤ 0`, `scale ≤ 0`, or either is not finite.
+    pub fn new(shape: f64, scale: f64) -> Result<Self, DistributionError> {
+        if !shape.is_finite() || !scale.is_finite() || shape <= 0.0 || scale <= 0.0 {
+            return Err(DistributionError::InvalidParameters(format!(
+                "Weibull requires shape > 0 and scale > 0, got shape={shape}, scale={scale}"
+            )));
+        }
+        Ok(Self { shape, scale })
+    }
+
+    /// Shape parameter β.
+    pub fn shape(&self) -> f64 {
+        self.shape
+    }
+
+    /// Scale parameter η.
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+
+    /// Mean = η·Γ(1 + 1/β).
+    pub fn mean(&self) -> f64 {
+        self.scale * gamma(1.0 + 1.0 / self.shape)
+    }
+
+    /// Variance = η²·[Γ(1 + 2/β) − Γ(1 + 1/β)²].
+    pub fn variance(&self) -> f64 {
+        let g1 = gamma(1.0 + 1.0 / self.shape);
+        let g2 = gamma(1.0 + 2.0 / self.shape);
+        self.scale * self.scale * (g2 - g1 * g1)
+    }
+
+    /// PDF: f(t) = (β/η)·(t/η)^(β−1)·exp(−(t/η)^β) for t ≥ 0.
+    pub fn pdf(&self, t: f64) -> f64 {
+        if t < 0.0 {
+            return 0.0;
+        }
+        if t == 0.0 {
+            return if self.shape < 1.0 {
+                f64::INFINITY
+            } else if (self.shape - 1.0).abs() < f64::EPSILON {
+                1.0 / self.scale
+            } else {
+                0.0
+            };
+        }
+        let z = t / self.scale;
+        (self.shape / self.scale) * z.powf(self.shape - 1.0) * (-z.powf(self.shape)).exp()
+    }
+
+    /// CDF: F(t) = 1 − exp(−(t/η)^β).
+    pub fn cdf(&self, t: f64) -> f64 {
+        if t <= 0.0 {
+            return 0.0;
+        }
+        let z = t / self.scale;
+        1.0 - (-z.powf(self.shape)).exp()
+    }
+
+    /// Quantile (inverse CDF): t = η·(−ln(1−p))^(1/β).
+    ///
+    /// Returns `None` if `p` is outside `[0, 1)`.
+    pub fn quantile(&self, p: f64) -> Option<f64> {
+        if !(0.0..1.0).contains(&p) {
+            return None;
+        }
+        if p == 0.0 {
+            return Some(0.0);
+        }
+        Some(self.scale * (-(1.0 - p).ln()).powf(1.0 / self.shape))
+    }
+
+    /// Hazard rate (failure rate): λ(t) = (β/η)·(t/η)^(β−1).
+    ///
+    /// - β < 1: Decreasing failure rate (infant mortality)
+    /// - β = 1: Constant failure rate (random failures)
+    /// - β > 1: Increasing failure rate (wear-out)
+    pub fn hazard_rate(&self, t: f64) -> f64 {
+        if t <= 0.0 {
+            return if t == 0.0 && self.shape >= 1.0 {
+                if (self.shape - 1.0).abs() < f64::EPSILON {
+                    1.0 / self.scale
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+        }
+        let z = t / self.scale;
+        (self.shape / self.scale) * z.powf(self.shape - 1.0)
+    }
+
+    /// Reliability (survival) function: R(t) = 1 − F(t) = exp(−(t/η)^β).
+    pub fn reliability(&self, t: f64) -> f64 {
+        1.0 - self.cdf(t)
+    }
+}
+
+/// Gamma function Γ(x) = exp(ln_gamma(x)).
+///
+/// Uses the Lanczos approximation via [`ln_gamma`].
+fn gamma(x: f64) -> f64 {
+    ln_gamma(x).exp()
+}
+
+// ============================================================================
 // Regularized Incomplete Beta Function
 // ============================================================================
 
@@ -969,6 +1108,136 @@ mod tests {
             std::f64::consts::PI.sqrt().ln()
         );
     }
+
+    // --- Weibull ---
+
+    #[test]
+    fn test_weibull_exponential_special_case() {
+        // β=1 → Exponential(λ=1/η), mean=η, variance=η²
+        let w = Weibull::new(1.0, 5.0).unwrap();
+        assert!((w.mean() - 5.0).abs() < 1e-10);
+        assert!((w.variance() - 25.0).abs() < 1e-8);
+    }
+
+    #[test]
+    fn test_weibull_rayleigh_special_case() {
+        // β=2 → Rayleigh, mean = η√(π/4) = η·Γ(1.5) = η·(√π/2)
+        let w = Weibull::new(2.0, 1.0).unwrap();
+        let expected_mean = std::f64::consts::PI.sqrt() / 2.0;
+        assert!(
+            (w.mean() - expected_mean).abs() < 1e-10,
+            "Weibull(2,1) mean = {}, expected {}",
+            w.mean(),
+            expected_mean
+        );
+    }
+
+    #[test]
+    fn test_weibull_cdf_known_values() {
+        // F(t) = 1 - exp(-(t/η)^β)
+        let w = Weibull::new(2.0, 10.0).unwrap();
+        // F(10) = 1 - exp(-1) ≈ 0.6321
+        assert!((w.cdf(10.0) - (1.0 - (-1.0_f64).exp())).abs() < 1e-10);
+        // F(0) = 0
+        assert_eq!(w.cdf(0.0), 0.0);
+        // F(-1) = 0
+        assert_eq!(w.cdf(-1.0), 0.0);
+    }
+
+    #[test]
+    fn test_weibull_pdf_basic() {
+        // β=1, η=1: f(t) = exp(-t)
+        let w = Weibull::new(1.0, 1.0).unwrap();
+        assert!((w.pdf(0.0) - 1.0).abs() < 1e-10);
+        assert!((w.pdf(1.0) - (-1.0_f64).exp()).abs() < 1e-10);
+        assert!((w.pdf(2.0) - (-2.0_f64).exp()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_weibull_pdf_negative() {
+        let w = Weibull::new(2.0, 5.0).unwrap();
+        assert_eq!(w.pdf(-1.0), 0.0);
+    }
+
+    #[test]
+    fn test_weibull_quantile_roundtrip() {
+        let w = Weibull::new(2.5, 100.0).unwrap();
+        for &p in &[0.1, 0.25, 0.5, 0.75, 0.9] {
+            let t = w.quantile(p).unwrap();
+            let p_back = w.cdf(t);
+            assert!(
+                (p_back - p).abs() < 1e-10,
+                "roundtrip: p={p} -> t={t} -> p_back={p_back}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_weibull_quantile_edge_cases() {
+        let w = Weibull::new(2.0, 10.0).unwrap();
+        assert_eq!(w.quantile(0.0), Some(0.0));
+        assert_eq!(w.quantile(1.0), None);
+        assert_eq!(w.quantile(-0.1), None);
+    }
+
+    #[test]
+    fn test_weibull_reliability() {
+        let w = Weibull::new(2.0, 10.0).unwrap();
+        // R(t) = 1 - F(t)
+        for &t in &[1.0, 5.0, 10.0, 20.0] {
+            let r = w.reliability(t);
+            let f = w.cdf(t);
+            assert!((r + f - 1.0).abs() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn test_weibull_hazard_rate() {
+        // β=1 → constant hazard rate = 1/η
+        let w = Weibull::new(1.0, 5.0).unwrap();
+        for &t in &[1.0, 5.0, 10.0] {
+            assert!((w.hazard_rate(t) - 0.2).abs() < 1e-10);
+        }
+        // β=2 → h(t) = 2t/η², linearly increasing
+        let w2 = Weibull::new(2.0, 10.0).unwrap();
+        assert!((w2.hazard_rate(5.0) - 2.0 * 5.0 / 100.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_weibull_invalid() {
+        assert!(Weibull::new(0.0, 1.0).is_err());
+        assert!(Weibull::new(-1.0, 1.0).is_err());
+        assert!(Weibull::new(1.0, 0.0).is_err());
+        assert!(Weibull::new(1.0, -1.0).is_err());
+        assert!(Weibull::new(f64::NAN, 1.0).is_err());
+        assert!(Weibull::new(1.0, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn test_weibull_mean_variance_known() {
+        // β=3.6, η=1000: known engineering example
+        // Γ(1 + 1/3.6) = Γ(1.2778) ≈ 0.8946
+        let w = Weibull::new(3.6, 1000.0).unwrap();
+        let mean = w.mean();
+        assert!(mean > 800.0 && mean < 1000.0, "mean={mean}");
+        assert!(w.variance() > 0.0);
+    }
+
+    #[test]
+    fn test_weibull_pdf_integral_approx() {
+        // Numerical integration of PDF should ≈ 1
+        let w = Weibull::new(2.0, 10.0).unwrap();
+        let n = 10_000;
+        let dt = 50.0 / n as f64;
+        let integral: f64 = (0..n).map(|i| {
+            let t = (i as f64 + 0.5) * dt;
+            w.pdf(t) * dt
+        }).sum();
+        assert!(
+            (integral - 1.0).abs() < 0.01,
+            "PDF integral = {integral}, expected ≈ 1.0"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1086,6 +1355,67 @@ mod proptests {
                 prop_assert!(c >= prev - 1e-10, "CDF not monotonic at x={x}");
                 prev = c;
             }
+        }
+
+        // --- Weibull ---
+
+        #[test]
+        fn weibull_cdf_in_01(
+            shape in 0.1_f64..10.0,
+            scale in 0.1_f64..100.0,
+            t in 0.0_f64..200.0,
+        ) {
+            let w = Weibull::new(shape, scale).unwrap();
+            let c = w.cdf(t);
+            prop_assert!((0.0..=1.0).contains(&c), "CDF({t}) = {c} out of [0,1]");
+        }
+
+        #[test]
+        fn weibull_quantile_roundtrip(
+            shape in 0.5_f64..10.0,
+            scale in 1.0_f64..100.0,
+            p in 0.001_f64..0.999,
+        ) {
+            let w = Weibull::new(shape, scale).unwrap();
+            let t = w.quantile(p).unwrap();
+            let p_back = w.cdf(t);
+            prop_assert!(
+                (p_back - p).abs() < 1e-8,
+                "roundtrip: p={p} -> t={t} -> p_back={p_back}"
+            );
+        }
+
+        #[test]
+        fn weibull_pdf_non_negative(
+            shape in 0.1_f64..10.0,
+            scale in 0.1_f64..100.0,
+            t in 0.0_f64..200.0,
+        ) {
+            let w = Weibull::new(shape, scale).unwrap();
+            prop_assert!(w.pdf(t) >= 0.0, "PDF({t}) must be >= 0");
+        }
+
+        #[test]
+        fn weibull_reliability_plus_cdf_is_one(
+            shape in 0.5_f64..5.0,
+            scale in 1.0_f64..50.0,
+            t in 0.001_f64..100.0,
+        ) {
+            let w = Weibull::new(shape, scale).unwrap();
+            let sum = w.cdf(t) + w.reliability(t);
+            prop_assert!(
+                (sum - 1.0).abs() < 1e-12,
+                "CDF + R should = 1, got {sum}"
+            );
+        }
+
+        #[test]
+        fn weibull_variance_positive(
+            shape in 0.1_f64..10.0,
+            scale in 0.1_f64..100.0,
+        ) {
+            let w = Weibull::new(shape, scale).unwrap();
+            prop_assert!(w.variance() > 0.0, "variance must be positive");
         }
     }
 }

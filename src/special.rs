@@ -127,6 +127,64 @@ pub fn standard_normal_pdf(x: f64) -> f64 {
     FRAC_1_SQRT_2PI * (-0.5 * x * x).exp()
 }
 
+/// Lanczos approximation of ln Γ(x).
+///
+/// Reference: Lanczos (1964), "A Precision Approximation of the Gamma
+/// Function", *SIAM Journal on Numerical Analysis* 1(1).
+///
+/// # Accuracy
+/// Relative error < 2 × 10⁻¹⁰ for x > 0.
+///
+/// # Examples
+/// ```
+/// use u_optim::special::ln_gamma;
+/// // Γ(5) = 24
+/// assert!((ln_gamma(5.0) - 24.0_f64.ln()).abs() < 1e-10);
+/// ```
+pub fn ln_gamma(x: f64) -> f64 {
+    #[allow(clippy::excessive_precision)]
+    const COEFFICIENTS: [f64; 9] = [
+        0.99999999999980993,
+        676.5203681218851,
+        -1259.1392167224028,
+        771.32342877765313,
+        -176.61502916214059,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.9843695780195716e-6,
+        1.5056327351493116e-7,
+    ];
+    const G: f64 = 7.0;
+
+    if x < 0.5 {
+        let pi = std::f64::consts::PI;
+        return (pi / (pi * x).sin()).ln() - ln_gamma(1.0 - x);
+    }
+
+    let x = x - 1.0;
+    let mut sum = COEFFICIENTS[0];
+    for (i, &c) in COEFFICIENTS[1..].iter().enumerate() {
+        sum += c / (x + i as f64 + 1.0);
+    }
+
+    let t = x + G + 0.5;
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + sum.ln()
+}
+
+/// Gamma function Γ(x) = exp(ln_gamma(x)).
+///
+/// # Examples
+/// ```
+/// use u_optim::special::gamma;
+/// // Γ(5) = 4! = 24
+/// assert!((gamma(5.0) - 24.0).abs() < 1e-8);
+/// // Γ(0.5) = √π
+/// assert!((gamma(0.5) - std::f64::consts::PI.sqrt()).abs() < 1e-10);
+/// ```
+pub fn gamma(x: f64) -> f64 {
+    ln_gamma(x).exp()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,6 +302,36 @@ mod tests {
         for &x in &[0.5, 1.0, 2.0, 3.0] {
             let diff = (standard_normal_pdf(x) - standard_normal_pdf(-x)).abs();
             assert!(diff < 1e-15, "PDF not symmetric at x={x}");
+        }
+    }
+
+    // --- ln_gamma / gamma ---
+
+    #[test]
+    fn test_ln_gamma_integers() {
+        // Γ(n) = (n-1)! for positive integers
+        assert!((ln_gamma(1.0)).abs() < 1e-10); // Γ(1) = 1
+        assert!((ln_gamma(2.0)).abs() < 1e-10); // Γ(2) = 1
+        assert!((ln_gamma(3.0) - 2.0_f64.ln()).abs() < 1e-10); // Γ(3) = 2
+        assert!((ln_gamma(5.0) - 24.0_f64.ln()).abs() < 1e-10); // Γ(5) = 24
+        assert!((ln_gamma(7.0) - 720.0_f64.ln()).abs() < 1e-9); // Γ(7) = 720
+    }
+
+    #[test]
+    fn test_gamma_half_integers() {
+        // Γ(0.5) = √π
+        let sqrt_pi = std::f64::consts::PI.sqrt();
+        assert!((gamma(0.5) - sqrt_pi).abs() < 1e-10);
+        // Γ(1.5) = √π/2
+        assert!((gamma(1.5) - sqrt_pi / 2.0).abs() < 1e-10);
+        // Γ(2.5) = 3√π/4
+        assert!((gamma(2.5) - 3.0 * sqrt_pi / 4.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_gamma_positive() {
+        for &x in &[0.1, 0.5, 1.0, 2.0, 5.0, 10.0] {
+            assert!(gamma(x) > 0.0, "Γ({x}) should be positive");
         }
     }
 }
