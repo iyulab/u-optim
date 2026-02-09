@@ -1181,14 +1181,14 @@ impl BetaDistribution {
     /// Returns `DistributionError` if α ≤ 0 or β ≤ 0.
     pub fn new(alpha: f64, beta: f64) -> Result<Self, DistributionError> {
         if alpha <= 0.0 || !alpha.is_finite() {
-            return Err(DistributionError::InvalidParameters(
-                format!("alpha must be positive and finite, got {alpha}"),
-            ));
+            return Err(DistributionError::InvalidParameters(format!(
+                "alpha must be positive and finite, got {alpha}"
+            )));
         }
         if beta <= 0.0 || !beta.is_finite() {
-            return Err(DistributionError::InvalidParameters(
-                format!("beta must be positive and finite, got {beta}"),
-            ));
+            return Err(DistributionError::InvalidParameters(format!(
+                "beta must be positive and finite, got {beta}"
+            )));
         }
         Ok(Self { alpha, beta })
     }
@@ -1221,8 +1221,7 @@ impl BetaDistribution {
         if x <= 0.0 || x >= 1.0 {
             return 0.0;
         }
-        let ln_pdf = (self.alpha - 1.0) * x.ln()
-            + (self.beta - 1.0) * (1.0 - x).ln()
+        let ln_pdf = (self.alpha - 1.0) * x.ln() + (self.beta - 1.0) * (1.0 - x).ln()
             - ln_beta(self.alpha, self.beta);
         ln_pdf.exp()
     }
@@ -1316,9 +1315,9 @@ impl ChiSquared {
     /// Returns `DistributionError` if k ≤ 0.
     pub fn new(k: f64) -> Result<Self, DistributionError> {
         if k <= 0.0 || !k.is_finite() {
-            return Err(DistributionError::InvalidParameters(
-                format!("k must be positive and finite, got {k}"),
-            ));
+            return Err(DistributionError::InvalidParameters(format!(
+                "k must be positive and finite, got {k}"
+            )));
         }
         Ok(Self { k })
     }
@@ -1878,7 +1877,11 @@ mod tests {
         let g = GammaDistribution::new(1.0, 0.5).unwrap(); // Gamma(1, 0.5) = Exp(0.5)
         let x = 4.0;
         let expected = 1.0 - (-0.5_f64 * x).exp();
-        assert!((g.cdf(x) - expected).abs() < 1e-8, "CDF({x}) = {} vs {expected}", g.cdf(x));
+        assert!(
+            (g.cdf(x) - expected).abs() < 1e-8,
+            "CDF({x}) = {} vs {expected}",
+            g.cdf(x)
+        );
     }
 
     #[test]
@@ -2095,10 +2098,12 @@ mod tests {
         let w = Weibull::new(2.0, 10.0).unwrap();
         let n = 10_000;
         let dt = 50.0 / n as f64;
-        let integral: f64 = (0..n).map(|i| {
-            let t = (i as f64 + 0.5) * dt;
-            w.pdf(t) * dt
-        }).sum();
+        let integral: f64 = (0..n)
+            .map(|i| {
+                let t = (i as f64 + 0.5) * dt;
+                w.pdf(t) * dt
+            })
+            .sum();
         assert!(
             (integral - 1.0).abs() < 0.01,
             "PDF integral = {integral}, expected ≈ 1.0"
