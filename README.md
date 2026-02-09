@@ -1,22 +1,13 @@
 # u-optim
 
-**Mathematical primitives for the U-Engine ecosystem**
+**Domain-agnostic mathematical primitives in Rust**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2021-orange.svg)](https://www.rust-lang.org/)
 
 ## Overview
 
-u-optim provides foundational mathematical, statistical, and probabilistic building blocks that are entirely domain-agnostic. It sits at **Layer 1 (Foundation)** in the U-Engine architecture and knows nothing about scheduling, nesting, geometry, or any consumer domain.
-
-```
-Consumer Layer
-  u-aps, u-nesting
-Framework Layer
-  u-schedule, u-nesting  →  u-metaheur  →  u-geometry
-                                 ↓
-Foundation Layer              u-optim  ← you are here
-```
+u-optim provides foundational mathematical, statistical, and probabilistic building blocks. Entirely domain-agnostic with no external dependencies beyond `rand`.
 
 ## Modules
 
@@ -33,7 +24,6 @@ Foundation Layer              u-optim  ← you are here
 - **Numerical stability first** — Welford's algorithm for variance, Neumaier summation for accumulation
 - **Reproducibility** — Seeded RNG support for deterministic experiments
 - **Property-based testing** — Mathematical invariants verified via `proptest`
-- **Zero domain coupling** — No scheduling, nesting, or manufacturing concepts
 
 ## Quick Start
 
@@ -79,3 +69,10 @@ cargo test
 ## License
 
 MIT License — see [LICENSE](LICENSE).
+
+## Related
+
+- [u-metaheur](https://github.com/iyulab/u-metaheur) — Metaheuristic optimization (GA, SA, ALNS, CP)
+- [u-geometry](https://github.com/iyulab/u-geometry) — Computational geometry
+- [u-schedule](https://github.com/iyulab/u-schedule) — Scheduling framework
+- [u-nesting](https://github.com/iyulab/U-Nesting) — 2D/3D nesting and bin packing
