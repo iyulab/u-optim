@@ -47,8 +47,7 @@ pub fn standard_normal_cdf(x: f64) -> f64 {
     // a₂ = -0.356563782, a₁ = 0.319381530
     let poly = k
         * (0.319381530
-            + k * (-0.356563782
-                + k * (1.781477937 + k * (-1.821255978 + k * 1.330274429))));
+            + k * (-0.356563782 + k * (1.781477937 + k * (-1.821255978 + k * 1.330274429))));
 
     let cdf_abs = 1.0 - phi * poly;
 
@@ -95,11 +94,7 @@ pub fn inverse_normal_cdf(p: f64) -> f64 {
     }
 
     // Use symmetry for p > 0.5
-    let (q, sign) = if p > 0.5 {
-        (1.0 - p, 1.0)
-    } else {
-        (p, -1.0)
-    };
+    let (q, sign) = if p > 0.5 { (1.0 - p, 1.0) } else { (p, -1.0) };
 
     // A&S 26.2.23: t = √(-2 ln(q))
     let t = (-2.0 * q.ln()).sqrt();
@@ -131,7 +126,6 @@ pub fn standard_normal_pdf(x: f64) -> f64 {
     }
     FRAC_1_SQRT_2PI * (-0.5 * x * x).exp()
 }
-
 
 #[cfg(test)]
 mod tests {

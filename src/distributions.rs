@@ -674,8 +674,7 @@ fn beta_cf(x: f64, a: f64, b: f64) -> f64 {
         h *= d * c;
 
         // Odd step: d_{2m+1}
-        let num_odd = -(a + m_f) * (a + b + m_f) * x
-            / ((a + 2.0 * m_f) * (a + 2.0 * m_f + 1.0));
+        let num_odd = -(a + m_f) * (a + b + m_f) * x / ((a + 2.0 * m_f) * (a + 2.0 * m_f + 1.0));
         d = 1.0 / (1.0 + num_odd * d).max(TINY);
         c = (1.0 + num_odd / c).max(TINY);
         let delta = d * c;
@@ -904,7 +903,10 @@ mod tests {
         // Higher lambda = more peaked
         let p4 = Pert::with_shape(0.0, 5.0, 10.0, 4.0).unwrap();
         let p8 = Pert::with_shape(0.0, 5.0, 10.0, 8.0).unwrap();
-        assert!(p8.variance() < p4.variance(), "higher λ should give lower variance");
+        assert!(
+            p8.variance() < p4.variance(),
+            "higher λ should give lower variance"
+        );
     }
 
     // --- Regularized Incomplete Beta Function ---

@@ -148,15 +148,13 @@ pub fn min(data: &[f64]) -> Option<f64> {
     if data.is_empty() {
         return None;
     }
-    data.iter()
-        .copied()
-        .try_fold(f64::INFINITY, |acc, x| {
-            if x.is_nan() {
-                None
-            } else {
-                Some(acc.min(x))
-            }
-        })
+    data.iter().copied().try_fold(f64::INFINITY, |acc, x| {
+        if x.is_nan() {
+            None
+        } else {
+            Some(acc.min(x))
+        }
+    })
 }
 
 /// Returns the maximum value in the slice.
@@ -173,15 +171,13 @@ pub fn max(data: &[f64]) -> Option<f64> {
     if data.is_empty() {
         return None;
     }
-    data.iter()
-        .copied()
-        .try_fold(f64::NEG_INFINITY, |acc, x| {
-            if x.is_nan() {
-                None
-            } else {
-                Some(acc.max(x))
-            }
-        })
+    data.iter().copied().try_fold(f64::NEG_INFINITY, |acc, x| {
+        if x.is_nan() {
+            None
+        } else {
+            Some(acc.max(x))
+        }
+    })
 }
 
 /// Computes the median of `data` without mutating the input.
@@ -439,8 +435,7 @@ impl WelfordAccumulator {
         }
         let total = self.count + other.count;
         let delta = other.mean_acc - self.mean_acc;
-        let new_mean =
-            self.mean_acc + delta * (other.count as f64 / total as f64);
+        let new_mean = self.mean_acc + delta * (other.count as f64 / total as f64);
         let new_m2 = self.m2
             + other.m2
             + delta * delta * (self.count as f64 * other.count as f64 / total as f64);
