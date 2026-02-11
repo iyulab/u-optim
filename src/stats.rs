@@ -1325,8 +1325,12 @@ mod proptests {
         }
 
         // --- Streaming skewness matches batch ---
+        // Uses bounded range [-1e6, 1e6] to avoid ill-conditioned data
+        // with 100+ order-of-magnitude dynamic range.
         #[test]
-        fn welford_skewness_matches_batch(data in finite_vec(3, 100)) {
+        fn welford_skewness_matches_batch(
+            data in proptest::collection::vec(-1e6_f64..1e6, 3..=100)
+        ) {
             let mut acc = WelfordAccumulator::new();
             for &x in &data { acc.update(x); }
             match (skewness(&data), acc.skewness()) {
@@ -1337,13 +1341,15 @@ mod proptests {
                         "batch={} stream={}", batch, stream
                     );
                 }
-                _ => {} // NaN/None cases: skip (extreme data)
+                _ => {} // NaN/None cases: skip
             }
         }
 
         // --- Streaming kurtosis matches batch ---
         #[test]
-        fn welford_kurtosis_matches_batch(data in finite_vec(4, 100)) {
+        fn welford_kurtosis_matches_batch(
+            data in proptest::collection::vec(-1e6_f64..1e6, 4..=100)
+        ) {
             let mut acc = WelfordAccumulator::new();
             for &x in &data { acc.update(x); }
             match (kurtosis(&data), acc.kurtosis()) {
@@ -1354,7 +1360,7 @@ mod proptests {
                         "batch={} stream={}", batch, stream
                     );
                 }
-                _ => {} // NaN/None cases: skip (extreme data)
+                _ => {} // NaN/None cases: skip
             }
         }
 

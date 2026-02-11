@@ -558,7 +558,7 @@ impl Pert {
             return 1.0;
         }
         let t = (x - self.min) / (self.max - self.min);
-        regularized_incomplete_beta(t, self.alpha, self.beta)
+        special::regularized_incomplete_beta(t, self.alpha, self.beta)
     }
 
     /// Approximate quantile using normal approximation.
@@ -632,13 +632,13 @@ impl Weibull {
 
     /// Mean = η·Γ(1 + 1/β).
     pub fn mean(&self) -> f64 {
-        self.scale * gamma(1.0 + 1.0 / self.shape)
+        self.scale * special::gamma(1.0 + 1.0 / self.shape)
     }
 
     /// Variance = η²·[Γ(1 + 2/β) − Γ(1 + 1/β)²].
     pub fn variance(&self) -> f64 {
-        let g1 = gamma(1.0 + 1.0 / self.shape);
-        let g2 = gamma(1.0 + 2.0 / self.shape);
+        let g1 = special::gamma(1.0 + 1.0 / self.shape);
+        let g2 = special::gamma(1.0 + 2.0 / self.shape);
         self.scale * self.scale * (g2 - g1 * g1)
     }
 
@@ -899,7 +899,7 @@ impl GammaDistribution {
             }
             return 0.0;
         }
-        let log_pdf = self.shape * self.rate.ln() - ln_gamma(self.shape)
+        let log_pdf = self.shape * self.rate.ln() - special::ln_gamma(self.shape)
             + (self.shape - 1.0) * x.ln()
             - self.rate * x;
         log_pdf.exp()
@@ -912,7 +912,7 @@ impl GammaDistribution {
         if x <= 0.0 {
             return 0.0;
         }
-        regularized_lower_gamma(self.shape, self.rate * x)
+        special::regularized_lower_gamma(self.shape, self.rate * x)
     }
 
     /// Quantile (inverse CDF) via Newton-Raphson iteration.
@@ -951,191 +951,6 @@ impl GammaDistribution {
 
         Some(x)
     }
-}
-
-/// Regularized lower incomplete gamma function P(a, x) = γ(a, x) / Γ(a).
-///
-/// Uses series expansion for x < a + 1, continued fraction otherwise.
-fn regularized_lower_gamma(a: f64, x: f64) -> f64 {
-    if x <= 0.0 {
-        return 0.0;
-    }
-    if x < a + 1.0 {
-        // Series expansion
-        gamma_series(a, x)
-    } else {
-        // Continued fraction (complement)
-        1.0 - gamma_cf(a, x)
-    }
-}
-
-/// Series expansion for the regularized lower incomplete gamma.
-fn gamma_series(a: f64, x: f64) -> f64 {
-    let mut term = 1.0 / a;
-    let mut sum = term;
-    let mut ap = a;
-
-    for _ in 0..200 {
-        ap += 1.0;
-        term *= x / ap;
-        sum += term;
-        if term.abs() < sum.abs() * 1e-14 {
-            break;
-        }
-    }
-
-    sum * (-x + a * x.ln() - ln_gamma(a)).exp()
-}
-
-/// Continued fraction for the upper incomplete gamma Q(a, x) = 1 − P(a, x).
-fn gamma_cf(a: f64, x: f64) -> f64 {
-    let mut b = x + 1.0 - a;
-    let mut c = 1.0 / 1e-30;
-    let mut d = 1.0 / b;
-    let mut h = d;
-
-    for i in 1..=200 {
-        let an = -(i as f64) * (i as f64 - a);
-        b += 2.0;
-        d = an * d + b;
-        if d.abs() < 1e-30 {
-            d = 1e-30;
-        }
-        c = b + an / c;
-        if c.abs() < 1e-30 {
-            c = 1e-30;
-        }
-        d = 1.0 / d;
-        let delta = d * c;
-        h *= delta;
-        if (delta - 1.0).abs() < 1e-14 {
-            break;
-        }
-    }
-
-    h * (-x + a * x.ln() - ln_gamma(a)).exp()
-}
-
-/// Gamma function Γ(x) = exp(ln_gamma(x)).
-///
-/// Uses the Lanczos approximation via [`ln_gamma`].
-fn gamma(x: f64) -> f64 {
-    ln_gamma(x).exp()
-}
-
-// ============================================================================
-// Regularized Incomplete Beta Function
-// ============================================================================
-
-/// Regularized incomplete beta function I_x(a, b).
-///
-/// Uses the continued fraction representation (Lentz's method) for
-/// numerical evaluation.
-///
-/// Reference: Press et al. (2007), *Numerical Recipes*, 3rd ed., §6.4.
-///
-/// # Accuracy
-/// Relative error < 1e-10 for typical parameter ranges.
-fn regularized_incomplete_beta(x: f64, a: f64, b: f64) -> f64 {
-    if x <= 0.0 {
-        return 0.0;
-    }
-    if x >= 1.0 {
-        return 1.0;
-    }
-
-    // Use symmetry relation: I_x(a,b) = 1 - I_{1-x}(b,a)
-    // Choose the form with better convergence
-    if x > (a + 1.0) / (a + b + 2.0) {
-        return 1.0 - regularized_incomplete_beta(1.0 - x, b, a);
-    }
-
-    let ln_prefix = a * x.ln() + b * (1.0 - x).ln() - ln_beta(a, b);
-
-    // Continued fraction (Lentz's algorithm)
-    let cf = beta_cf(x, a, b);
-
-    (ln_prefix.exp() / a) * cf
-}
-
-/// Log of the Beta function: ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a+b).
-fn ln_beta(a: f64, b: f64) -> f64 {
-    ln_gamma(a) + ln_gamma(b) - ln_gamma(a + b)
-}
-
-/// Lanczos approximation of ln Γ(x).
-///
-/// Reference: Lanczos (1964), "A Precision Approximation of the Gamma
-/// Function", *SIAM Journal on Numerical Analysis* 1(1).
-///
-/// # Accuracy
-/// Relative error < 2 × 10⁻¹⁰ for x > 0.
-fn ln_gamma(x: f64) -> f64 {
-    // Lanczos coefficients (g = 7)
-    #[allow(clippy::excessive_precision)]
-    const COEFFICIENTS: [f64; 9] = [
-        0.99999999999980993,
-        676.5203681218851,
-        -1259.1392167224028,
-        771.32342877765313,
-        -176.61502916214059,
-        12.507343278686905,
-        -0.13857109526572012,
-        9.9843695780195716e-6,
-        1.5056327351493116e-7,
-    ];
-    const G: f64 = 7.0;
-
-    if x < 0.5 {
-        // Reflection formula: Γ(x)·Γ(1−x) = π/sin(πx)
-        let pi = std::f64::consts::PI;
-        return (pi / (pi * x).sin()).ln() - ln_gamma(1.0 - x);
-    }
-
-    let x = x - 1.0;
-    let mut sum = COEFFICIENTS[0];
-    for (i, &c) in COEFFICIENTS[1..].iter().enumerate() {
-        sum += c / (x + i as f64 + 1.0);
-    }
-
-    let t = x + G + 0.5;
-    0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + sum.ln()
-}
-
-/// Continued fraction for the incomplete beta function (Lentz's algorithm).
-///
-/// Reference: Press et al. (2007), *Numerical Recipes*, §6.4.
-fn beta_cf(x: f64, a: f64, b: f64) -> f64 {
-    const MAX_ITER: usize = 200;
-    const EPS: f64 = 1e-14;
-    const TINY: f64 = 1e-30;
-
-    let mut c = 1.0;
-    let mut d = 1.0 / (1.0 - (a + b) * x / (a + 1.0)).max(TINY);
-    let mut h = d;
-
-    for m in 1..=MAX_ITER {
-        let m_f = m as f64;
-
-        // Even step: d_{2m}
-        let num_even = m_f * (b - m_f) * x / ((a + 2.0 * m_f - 1.0) * (a + 2.0 * m_f));
-        d = 1.0 / (1.0 + num_even * d).max(TINY);
-        c = (1.0 + num_even / c).max(TINY);
-        h *= d * c;
-
-        // Odd step: d_{2m+1}
-        let num_odd = -(a + m_f) * (a + b + m_f) * x / ((a + 2.0 * m_f) * (a + 2.0 * m_f + 1.0));
-        d = 1.0 / (1.0 + num_odd * d).max(TINY);
-        c = (1.0 + num_odd / c).max(TINY);
-        let delta = d * c;
-        h *= delta;
-
-        if (delta - 1.0).abs() < EPS {
-            break;
-        }
-    }
-
-    h
 }
 
 // ============================================================================
@@ -1222,7 +1037,7 @@ impl BetaDistribution {
             return 0.0;
         }
         let ln_pdf = (self.alpha - 1.0) * x.ln() + (self.beta - 1.0) * (1.0 - x).ln()
-            - ln_beta(self.alpha, self.beta);
+            - special::ln_beta(self.alpha, self.beta);
         ln_pdf.exp()
     }
 
@@ -1234,7 +1049,7 @@ impl BetaDistribution {
         if x >= 1.0 {
             return 1.0;
         }
-        regularized_incomplete_beta(x, self.alpha, self.beta)
+        special::regularized_incomplete_beta(x, self.alpha, self.beta)
     }
 
     /// Evaluates the quantile (inverse CDF) at probability p ∈ [0, 1].
@@ -1338,7 +1153,7 @@ impl ChiSquared {
             return 0.0;
         }
         let half_k = self.k / 2.0;
-        let ln_pdf = (half_k - 1.0) * x.ln() - x / 2.0 - half_k * 2.0_f64.ln() - ln_gamma(half_k);
+        let ln_pdf = (half_k - 1.0) * x.ln() - x / 2.0 - half_k * 2.0_f64.ln() - special::ln_gamma(half_k);
         ln_pdf.exp()
     }
 
@@ -1347,7 +1162,7 @@ impl ChiSquared {
         if x <= 0.0 {
             return 0.0;
         }
-        regularized_lower_gamma(self.k / 2.0, x / 2.0)
+        special::regularized_lower_gamma(self.k / 2.0, x / 2.0)
     }
 
     /// Evaluates the quantile (inverse CDF) at probability p ∈ [0, 1].
@@ -1598,14 +1413,14 @@ mod tests {
 
     #[test]
     fn test_regularized_beta_bounds() {
-        assert_eq!(regularized_incomplete_beta(0.0, 2.0, 3.0), 0.0);
-        assert_eq!(regularized_incomplete_beta(1.0, 2.0, 3.0), 1.0);
+        assert_eq!(special::regularized_incomplete_beta(0.0, 2.0, 3.0), 0.0);
+        assert_eq!(special::regularized_incomplete_beta(1.0, 2.0, 3.0), 1.0);
     }
 
     #[test]
     fn test_regularized_beta_symmetric() {
         // For Beta(a,a), I_{0.5}(a,a) = 0.5 by symmetry
-        let result = regularized_incomplete_beta(0.5, 3.0, 3.0);
+        let result = special::regularized_incomplete_beta(0.5, 3.0, 3.0);
         assert!(
             (result - 0.5).abs() < 1e-8,
             "I_0.5(3,3) = {result}, expected 0.5"
@@ -1616,7 +1431,7 @@ mod tests {
     fn test_regularized_beta_known_values() {
         // I_x(1,1) = x (Uniform)
         for &x in &[0.1, 0.3, 0.5, 0.7, 0.9] {
-            let result = regularized_incomplete_beta(x, 1.0, 1.0);
+            let result = special::regularized_incomplete_beta(x, 1.0, 1.0);
             assert!(
                 (result - x).abs() < 1e-10,
                 "I_{x}(1,1) = {result}, expected {x}"
@@ -1625,7 +1440,7 @@ mod tests {
 
         // I_x(1,b) = 1 - (1-x)^b
         for &x in &[0.1, 0.5, 0.9] {
-            let result = regularized_incomplete_beta(x, 1.0, 3.0);
+            let result = special::regularized_incomplete_beta(x, 1.0, 3.0);
             let expected = 1.0 - (1.0 - x).powi(3);
             assert!(
                 (result - expected).abs() < 1e-10,
@@ -1639,18 +1454,18 @@ mod tests {
     #[test]
     fn test_ln_gamma_known() {
         // Γ(1) = 1, ln(1) = 0
-        assert!((ln_gamma(1.0)).abs() < 1e-10);
+        assert!((special::ln_gamma(1.0)).abs() < 1e-10);
         // Γ(2) = 1, ln(1) = 0
-        assert!((ln_gamma(2.0)).abs() < 1e-10);
+        assert!((special::ln_gamma(2.0)).abs() < 1e-10);
         // Γ(3) = 2, ln(2) ≈ 0.6931
-        assert!((ln_gamma(3.0) - 2.0_f64.ln()).abs() < 1e-10);
+        assert!((special::ln_gamma(3.0) - 2.0_f64.ln()).abs() < 1e-10);
         // Γ(5) = 24, ln(24) ≈ 3.1781
-        assert!((ln_gamma(5.0) - 24.0_f64.ln()).abs() < 1e-10);
+        assert!((special::ln_gamma(5.0) - 24.0_f64.ln()).abs() < 1e-10);
         // Γ(0.5) = √π
         assert!(
-            (ln_gamma(0.5) - std::f64::consts::PI.sqrt().ln()).abs() < 1e-10,
+            (special::ln_gamma(0.5) - std::f64::consts::PI.sqrt().ln()).abs() < 1e-10,
             "ln Γ(0.5) = {}, expected {}",
-            ln_gamma(0.5),
+            special::ln_gamma(0.5),
             std::f64::consts::PI.sqrt().ln()
         );
     }
