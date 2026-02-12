@@ -17,7 +17,8 @@ u-numflow provides foundational mathematical, statistical, and probabilistic bui
 |--------|-------------|
 | `stats` | Descriptive statistics (mean, variance, skewness, kurtosis) with Welford's online algorithm and Neumaier summation |
 | `distributions` | Probability distributions: Uniform, Triangular, PERT, Normal, LogNormal |
-| `special` | Special mathematical functions: normal CDF (Abramowitz-Stegun), inverse normal CDF (Beasley-Springer-Moro) |
+| `special` | Special functions: normal/t/F/chi² CDF, inverse normal CDF, regularized incomplete beta/gamma, erf |
+| `matrix` | Dense matrix operations: determinant, inverse, Cholesky decomposition, Jacobi eigenvalue decomposition |
 | `random` | Seeded RNG, Fisher-Yates shuffle, weighted sampling, random subset selection |
 | `collections` | Specialized data structures: Union-Find with path compression and union-by-rank |
 
@@ -31,13 +32,13 @@ u-numflow provides foundational mathematical, statistical, and probabilistic bui
 
 ```toml
 [dependencies]
-u-numflow = { git = "https://github.com/iyulab/u-numflow" }
+u-numflow = "0.2"
 ```
 
 ```rust
-use u_optim::stats::OnlineStats;
-use u_optim::distributions::{PertDistribution, Distribution};
-use u_optim::random::Rng;
+use u_numflow::stats::OnlineStats;
+use u_numflow::distributions::{PertDistribution, Distribution};
+use u_numflow::random::Rng;
 
 // Online statistics with numerical stability
 let mut stats = OnlineStats::new();
@@ -53,7 +54,7 @@ let sample = pert.sample(&mut rng);
 
 // Seeded shuffling for reproducibility
 let mut items = vec![1, 2, 3, 4, 5];
-u_optim::random::shuffle(&mut items, &mut rng);
+u_numflow::random::shuffle(&mut items, &mut rng);
 ```
 
 ## Build & Test
